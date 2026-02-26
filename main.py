@@ -1,79 +1,175 @@
-byteList = []
-pointer = 0
-pointerFileMode = 0
+import argparse
+import uuid
 
-currentMode = 0
-for i in range(1000):
-    byteList.append(0)
+config = {
+    'i': 'add',       # +
+    'arch': 'sub',    # -
+    'by': 'right',    # >
+    'the': 'left',    # <
+    'use': 'execute', # 
+    'way': 'switch',  # change mod
+}
 
-commands = []
-commandIndex = 0
-jumps = []
-lastJumps = []
+modes =  {
+    "0": {
+        "add": "call incrementByte",
+        "sub": "call decrementByte",
+        "right": "call moveRight",
+        "left": "call moveLight",
+        "execute": "call printByte"
+    }
+}
 
-with open("input.iusearchbtw", "r") as f:
-    tempCommands = f.read().split("\n")
+def compile(inStr: str, itContent: str) -> str:
+    fileBytes = [ord(char) for char in itContent] + [0]
+    fileBytes = ", ".join(map(str, fileBytes))
+    commands = []
+    tempCommands = inStr.split("\n")
+
     for command in tempCommands:
-        if command.startswith("#"):
+
+        command = command.strip()
+        if not command:
             continue
-        command = command.split(" ")
-        commands.extend(command)
 
-with open('input.txt', 'r') as file:
-    content = file.read()
-    fileByteList = [ord(char) for char in content]
-    fileByteList.append(0)
+        command = command.split('#')[0].strip()
+        if not command:
+            continue
 
-while commandIndex < len(commands):
+        command_parts = command.split()
+        commands.extend(command_parts)
+
+    currentMode = 0
     
 
-    currentCommand = commands[commandIndex].lower()
-    if currentCommand not in ["i", "use", "arch", "by", "the", "way", "[", "]", ""]:
-        exit(f"No such command: {currentCommand} at index {commandIndex}")
+    for command in commands:
+        configCommand = config.get(command, "")
+        currentCommand = modes[currentMode].get(configCommand, "")
+        if currentCommand == "add":
+            # do something
+            continue
+    
+    fout = f"""
+    section .data
+        bytes db 1000 dup(0)
+        pointer dd 0
+        fileBytes db {fileBytes}
+        filePointer dd 0
 
-    if currentCommand == "the":
-        currentMode = (currentMode + 1) % 2
+    section .text
+        global _start
 
-    if currentMode == 0:
-        if currentCommand == "i":
-            byteList[pointer] += 1
-        elif currentCommand == "use":
-            byteList[pointer] -= 1
-        elif currentCommand == "arch":
-            pointer += 1
-        elif currentCommand == "by":
-            pointer -= 1
-        elif currentCommand == "way":
-            print(chr(byteList[pointer]), end="")
-    elif currentMode == 1:
-        if currentCommand == "arch":
-            pointerFileMode += 1
-        elif currentCommand == "by":
-            pointerFileMode -= 1
-        elif currentCommand == "way":
-            if 0 <= pointerFileMode < len(fileByteList):  # Ensure pointerFileMode is within bounds
-                byteList[pointer] = fileByteList[pointerFileMode]
+    _start:
+        _code:
+            ; code
+            jmp _exit
 
-    jump = False
-    if currentCommand == "[":
-        zero = False
-        if currentMode == 0:
-            if byteList[pointer] == 0:
-                zero = True
-        elif currentMode == 1:
-            if fileByteList[pointerFileMode] == 0:
-                zero = True
-        if zero and len(lastJumps) > 0:
-            jump = True
-            commandIndex = lastJumps[-1] + 1
-            lastJumps.pop()
-        else:
-            jumps.append(commandIndex)
-    if currentCommand == "]":
-        jump = True
-        if jumps:
-            lastJumps.append(commandIndex)
-            commandIndex = jumps[-1]
-            jumps.pop()
-    if not jump:
-        commandIndex += 1
+        printByte:
+            mov al, [bytes + [pointer]]
+            mov eax, 4
+            mov ebx, 1
+            mov ecx, eax
+            mov edx, 1
+            int 0x80
+            ret
+
+        moveRight:
+            inc [pointer]
+            ret
+
+        moveLeft:
+            dec [pointer]
+            ret
+
+        incrementByte:
+            inc byte [bytes + [pointer]]
+            ret
+
+        decrementByte:
+            dec byte [bytes + [pointer]]
+            ret
+
+        moveFilePointerRight:
+            inc [filePointer]
+            ret
+
+        moveFilePointerLeft:
+            dec [filePointer]
+            ret
+
+        incrementFileByte:
+            inc byte [fileBytes + [filePointer]]
+            ret
+
+        decrementFileByte:
+            dec byte [fileBytes + [filePointer]]
+            ret
+
+        setPointerLocationToFilePointerLocation:
+            mov al, [fileBytes + [filePointer]]
+            mov [bytes + [pointer]], al
+            ret
+
+    _exit:
+        mov eax, 1
+        xor ebx, ebx
+        int 0x80
+    """
+
+
+def main(argData: dict) -> None:
+    try:
+        data = ""
+        with open(argData['inputFlag']['value'], 'r') as infile:
+            i = infile.read()
+        with open(argData['inputTxtFlag']['value'], 'r') as intFile:
+            it = intFile.read()
+        with open(argData['outputFlag']['value'], 'w') as outfile:
+            outfile.write(compile(i, it))
+
+    except Exception as e:
+        print(f"Error processing files: {e}")
+
+if __name__ == "__main__":
+    argData = {
+        'inputFlag': {
+            'flag': '-i',
+            'longFlag': '--inputFlag',
+            'type': str,
+            'default': 'main.iusearchbtw',
+            'help': "Path to the input script file (default: 'main.iusearchbtw')."
+        },
+        'inputTxtFlag': {
+            'flag': '-itxt',
+            'longFlag': '--inputTxtFlag',
+            'type': str,
+            'default': 'input.txt',
+            'help': "Path to the input text file (default: 'input.txt')."
+        },
+        'outputFlag': {
+            'flag': '-o',
+            'longFlag': '--outputFlag',
+            'type': str,
+            'required': True,
+            'help': "Path to the output file. This flag is required."
+        }
+    }
+
+    parser = argparse.ArgumentParser(description="Process input and output files.")
+
+    for argName, argDetails in argData.items():
+        parser.add_argument(
+            argDetails['flag'], 
+            argDetails['longFlag'], 
+            type=argDetails['type'], 
+            default=argDetails.get('default'), 
+            required=argDetails.get('required', False), 
+            help=argDetails['help']
+        )
+
+    args = parser.parse_args()
+
+    for argName, argDetails in argData.items():
+        argDetails['value'] = getattr(args, argName)
+
+    main(argData)
